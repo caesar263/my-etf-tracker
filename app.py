@@ -2,24 +2,26 @@ import streamlit as st
 import pandas as pd
 import os
 
-st.set_page_config(page_title="源鐿科技 ETF 監控", layout="wide")
-st.title("📈 每日主、被動 ETF 持股變動監控")
+st.set_page_config(page_title="主動式 ETF 前十大監控", layout="wide")
 
-if os.path.exists('analysis_result.csv'):
-    # 顯示變動總表
-    st.subheader("📋 持股變動明細表")
-    res_df = pd.read_csv('analysis_result.csv')
-    st.dataframe(res_df.style.highlight_max(axis=0, subset=['增減張數']), use_container_width=True)
+st.title("🔎 主動式 ETF 前十大持股每日變動監控")
 
-    # 顯示排行榜
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("🏆 買超排行榜 (張)")
-        rank_df = pd.read_csv('top_ranking.csv')
-        st.table(rank_df[['證券代號', '證券名稱', '增減張數']])
-        
-    with col2:
-        st.subheader("🏗️ 產業分佈")
-        st.bar_chart(data=res_df, x='產業類別', y='增減張數')
+if os.path.exists('display_result.csv'):
+    df = pd.read_csv('display_result.csv')
+    
+    # 顯示前十大股票變動
+    st.subheader("📋 每日變動清單 (前 10 大股票)")
+    
+    # 使用表格樣式，將新增股票特別標註顏色
+    def highlight_new(val):
+        color = 'background-color: #ffffcc' if val == '✨ 新增' else ''
+        return color
+
+    st.dataframe(df.style.applymap(highlight_new, subset=['新增狀態']), use_container_width=True)
+    
+    # 權重變動視覺化
+    if '每日權重變動' in df.columns:
+        st.subheader("📊 前十大權重增減趨勢")
+        st.bar_chart(data=df, x='股票名稱', y='每日權重變動')
 else:
-    st.info("⌛ 數據更新中，請確認 GitHub Actions 已成功運行。")
+    st.info("⌛ 目前尚無對比數據。請點擊 GitHub Actions 執行第一次抓取，明天即可看到變動。")
