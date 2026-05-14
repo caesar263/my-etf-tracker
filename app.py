@@ -2,19 +2,24 @@ import streamlit as st
 import pandas as pd
 import os
 
-# 網頁標題設定
-st.set_page_config(page_title="源鐿科技 ETF 監控面板", layout="wide")
-st.title("📊 主動式 ETF 持股變動追蹤")
+st.set_page_config(page_title="源鐿科技 ETF 監控", layout="wide")
+st.title("📈 每日主、被動 ETF 持股變動監控")
 
-# 讀取由 GitHub Actions 自動更新的數據
-if os.path.exists('last_data.csv'):
-    df = pd.read_csv('last_data.csv')
-    
-    st.subheader("今日最新持股清單")
-    st.dataframe(df, use_container_width=True)
-    
-    # 建立簡易圖表
-    st.subheader("持股權重分佈")
-    st.bar_chart(data=df, x='證券名稱', y='持股比例')
+if os.path.exists('analysis_result.csv'):
+    # 顯示變動總表
+    st.subheader("📋 持股變動明細表")
+    res_df = pd.read_csv('analysis_result.csv')
+    st.dataframe(res_df.style.highlight_max(axis=0, subset=['增減張數']), use_container_width=True)
+
+    # 顯示排行榜
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("🏆 買超排行榜 (張)")
+        rank_df = pd.read_csv('top_ranking.csv')
+        st.table(rank_df[['證券代號', '證券名稱', '增減張數']])
+        
+    with col2:
+        st.subheader("🏗️ 產業分佈")
+        st.bar_chart(data=res_df, x='產業類別', y='增減張數')
 else:
-    st.warning("目前尚未產生數據，請先執行 GitHub Actions。")
+    st.info("⌛ 數據更新中，請確認 GitHub Actions 已成功運行。")
