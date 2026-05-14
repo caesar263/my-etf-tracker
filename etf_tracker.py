@@ -1,48 +1,53 @@
 import os
 import pandas as pd
 
-def fetch_etf_holdings():
-    # 這裡確保 7 個標的的名稱、股數、比例、類別數量完全對齊
-    # 並且只使用英文標準半形符號，避免程式崩潰
+def fetch_active_etf_top10(fund_code):
+    """
+    這裡模擬抓取主動式 ETF (如 00988A 或 00981A) 的前十大持股。
+    實務上，您可以將此處替換為從 API 或網頁抓取的真實數據。
+    """
+    # 模擬該 ETF 今日的前十大持股數據
     data = {
-        '證券代號': ['2330', '2317', '2454', '00988A', '00981A', '0050', '0056'],
-        '證券名稱': ['台積電', '鴻海', '聯發科', '統一全球創新', '元大高收入', '元大台灣50', '元大高股息'],
-        '持股股數': [1505000, 798000, 305000, 52000, 400000, 100000, 80000],
-        '持股比例': [28.6, 11.9, 9.4, 4.7, 3.2, 5.0, 4.5],
-        '產業類別': ['半導體', '其他電子', '半導體', '電腦週邊', '電腦週邊', '指數型', '指數型']
+        '股票代號': ['2330', '2317', '2454', '6669', '3231', '2382', '2308', '2881', '2303', '3711'],
+        '股票名稱': ['台積電', '鴻海', '聯發科', '緯穎', '緯創', '廣達', '台達電', '富邦金', '聯電', '日月光投控'],
+        '股數': [1500000, 800000, 300000, 50000, 400000, 200000, 150000, 600000, 500000, 180000],
+        '持股權重': [28.5, 12.0, 9.2, 4.5, 3.8, 3.5, 3.0, 2.8, 2.5, 2.2]
     }
-    return pd.DataFrame(data)
+    df = pd.DataFrame(data)
+    df['ETF代號'] = fund_code
+    return df
 
 def run_analysis():
-    df_today = fetch_etf_holdings()
+    # 您只需在這裡填入想要監控的主動式 ETF 代號
+    target_fund = "00988A" 
+    df_today = fetch_active_etf_top10(target_fund)
     
-    # 檢查是否有昨日資料進行對比
-    if os.path.exists('last_data.csv'):
-        df_yesterday = pd.read_csv('last_data.csv')
-        df_merge = pd.merge(df_today, df_yesterday, on='證券代號', how='outer', suffixes=('_今', '_昨'))
-        
-        # 1. 計算比例變動
-        df_merge['比例變動'] = df_merge['持股比例_今'].fillna(0) - df_merge['持股比例_昨'].fillna(0)
-        
-        # 2. 計算增減張數 (股數差除以1000)
-        df_merge['增減張數'] = (df_merge['持股股數_今'].fillna(0) - df_merge['持股股數_昨'].fillna(0)) / 1000
-        
-        # 3. 判斷變動狀態 (新增標的)
-        df_merge['狀態'] = df_merge.apply(
-            lambda x: '新增' if pd.isna(x['持股股數_昨']) else ('剔除' if pd.isna(x['持股股數_今']) else '維持'),
-            axis=1
-        )
-        
-        # 整理最終輸出表單
-        report = df_merge[['證券代號', '證券名稱_今', '比例變動', '增減張數', '產業類別_今', '狀態']].copy()
-        report.columns = ['證券代號', '證券名稱', '比例變動(%)', '增減張數', '產業類別', '變動狀態']
-        
-        # 儲存結果與排行榜
-        report.to_csv('analysis_result.csv', index=False)
-        report.sort_values(by='增減張數', ascending=False).to_csv('top_ranking.csv', index=False)
+    file_name = f'holdings_{target_fund}.csv'
     
-    # 儲存今日數據供明日比對
-    df_today.to_csv('last_data.csv', index=False)
+    if os.path.exists(file_name):
+        df_yesterday = pd.read_csv(file_name)
+        # 對比今日與昨日的前十大
+        df_merge = pd.merge(df_today, df_yesterday, on='股票代號', how='left', suffixes=('_今', '_昨'))
+        
+        # 1. 計算每日變動
+        df_merge['股數變動'] = df_merge['股數_今'].fillna(0) - df_merge['股數_昨'].fillna(0)
+        df_merge['權重變動'] = df_merge['持股權重_今'].fillna(0) - df_merge['持股權重_昨'].fillna(0)
+        
+        # 2. 判斷每日是否有新增股票 (昨天不在前十名，今天進榜)
+        df_merge['是否新增'] = df_merge.apply(lambda x: '✨ 新增' if pd.isna(x['股數_昨']) else '-', axis=1)
+        
+        # 整理輸出欄位
+        result = df_merge[['股票代號', '股票名稱_今', '股數_今', '股數變動', '持股權重_今', '權重變動', '是否新增']]
+        result.columns = ['股票代號', '股票名稱', '今日股數', '每日股數變動', '今日權重(%)', '每日權重變動', '新增狀態']
+        
+        # 儲存分析結果供 Streamlit 網頁顯示
+        result.to_csv('display_result.csv', index=False)
+    else:
+        # 第一次執行，先建立初始資料
+        df_today.to_csv('display_result.csv', index=False)
+        
+    # 更新存檔，供明天對比使用
+    df_today.to_csv(file_name, index=False)
 
 if __name__ == "__main__":
     run_analysis()
