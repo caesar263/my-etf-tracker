@@ -5,38 +5,79 @@ import io
 
 def fetch_top10_data(fund_code):
     standard_columns = ['股票代號', '股票名稱', '今日股數', '持股權重', 'ETF代號']
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7'
+    }
     
-    # 🌟 統一投信的真實抓取邏輯
-    if fund_code in ["00981A", "00988A", "00403A"]:
-        url = f"https://www.ezmoney.com.tw/ETF/Fund/Info?fundCode={fund_code}"
+    # 🌟 投信網址路由表 (已裝填：統一、群益、兆豐)
+    url_map = {
+        "00981A": "https://www.ezmoney.com.tw/ETF/Fund/Info?fundCode=00981A",
+        "00988A": "https://www.ezmoney.com.tw/ETF/Fund/Info?fundCode=00988A",
+        "00403A": "https://www.ezmoney.com.tw/ETF/Fund/Info?fundCode=00403A",
+        "00992A": "https://www.capitalfund.com.tw/etf/product/detail/500/basic", # 群益科技創新
+        "00996A": "https://www.megafunds.com.tw/MEGA/etf/etf_product.aspx?id=23" # 兆豐台灣豐收
+    }
+    
+    target_url = url_map.get(fund_code)
+    
+    if target_url:
         try:
-            response = requests.get(url, headers=headers, timeout=15)
+            print(f"正在嘗試連線並抓取: {fund_code} ...")
+            response = requests.get(target_url, headers=headers, timeout=15)
+            response.encoding = 'utf-8' # 確保中文不亂碼
             tables = pd.read_html(io.StringIO(response.text))
+            
+            # 🌟 智慧表格辨識引擎
             for df in tables:
-                cols = str(df.columns)
-                if ('權重' in cols or '比例' in cols) and ('淨值' not in cols):
-                    temp_df = df.head(10).copy()
-                    final_df = pd.DataFrame()
-                    final_df['股票代號'] = temp_df.iloc[:, 0].astype(str)
-                    final_df['股票名稱'] = temp_df.iloc[:, 1].astype(str)
-                    if final_df['股票名稱'].str.contains('主動|ETF|基金|指數').any():
-                        continue
-                    final_df['今日股數'] = pd.to_numeric(temp_df.iloc[:, 2].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
-                    final_df['持股權重'] = pd.to_numeric(temp_df.iloc[:, 3].astype(str).str.replace('%', ''), errors='coerce').fillna(0)
-                    final_df['ETF代號'] = fund_code
-                    return final_df[standard_columns]
+                cols_str = str(df.columns)
+                first_row_str = str(df.iloc[0].values) if not df.empty else ""
+                
+                # 判斷是否為持股表格 (包含權重或比例)
+                if ('權重' in cols_str or '比例' in cols_str) or ('權重' in first_row_str or '比例' in first_row_str):
+                    
+                    # 有些網站的表頭寫在第一行資料裡，將它推上去當表頭
+                    if '權重' in first_row_str or '比例' in first_row_str:
+                        df.columns = df.iloc[0]
+                        df = df[1:]
+                        
+                    # 智慧尋找對應的欄位 (不管網站取什麼名字)
+                    col_id = next((c for c in df.columns if '代' in str(c) or '碼' in str(c)), None)
+                    col_name = next((c for c in df.columns if '名' in str(c)), None)
+                    col_vol = next((c for c in df.columns if '股數' in str(c) or '張' in str(c)), None)
+                    col_weight = next((c for c in df.columns if '權重' in str(c) or '比例' in str(c)), None)
+                    
+                    if col_id and col_name and col_weight:
+                        final_df = pd.DataFrame()
+                        # 清洗代號 (去除網站可能帶有的 = 或 " 符號)
+                        final_df['股票代號'] = df[col_id].astype(str).str.replace('=', '').str.replace('"', '').str.strip()
+                        final_df['股票名稱'] = df[col_name].astype(str).str.strip()
+                        
+                        # 剔除空資料
+                        final_df = final_df[~final_df['股票代號'].isin(['nan', 'None', '-'])]
+                        if final_df.empty: continue
+                        
+                        # 避開抓到「相關基金」的錯誤表格
+                        if final_df['股票名稱'].str.contains('主動|ETF|基金|指數|現金').any():
+                            continue
+                            
+                        # 若官網沒有提供股數，則填入 0
+                        if col_vol:
+                            final_df['今日股數'] = pd.to_numeric(df[col_vol].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+                        else:
+                            final_df['今日股數'] = 0
+                            
+                        final_df['持股權重'] = pd.to_numeric(df[col_weight].astype(str).str.replace('%', ''), errors='coerce').fillna(0)
+                        final_df['ETF代號'] = fund_code
+                        
+                        print(f"✅ {fund_code} 抓取成功！")
+                        return final_df.head(10)[standard_columns]
         except Exception as e:
-            print(f"抓取 {fund_code} 失敗: {e}")
-    
-    # 🌟 若非統一投信，給予明確的「建置中」提示，絕不使用假資料
-    return pd.DataFrame({
-        '股票代號': ['-'],
-        '股票名稱': ['尚未串接真實網址'],
-        '今日股數': [0],
-        '持股權重': [0.0],
-        'ETF代號': [fund_code]
-    })[standard_columns]
+            print(f"❌ 抓取 {fund_code} 發生錯誤: {e}")
+    else:
+        print(f"⚠️ {fund_code} 尚未設定網址。")
+        
+    return pd.DataFrame(columns=standard_columns)
 
 def run_analysis():
     target_funds = {
@@ -51,52 +92,18 @@ def run_analysis():
     for fund_code, fund_name in target_funds.items():
         df_today = fetch_top10_data(fund_code)
         save_path = f'holdings_{fund_code}.csv'
+        
+        if df_today.empty:
+            continue
 
         if os.path.exists(save_path):
             df_yesterday = pd.read_csv(save_path, dtype={'股票代號': str})
-            
-            # 🔥 智慧清除：只要發現舊檔案裡有 1500000 這個假數字，就直接重置！
-            if '今日股數' in df_yesterday.columns and (df_yesterday['今日股數'] == 1500000).any():
-                print(f"🧹 自動清除 {fund_code} 的歷史假資料...")
-                df_yesterday = pd.DataFrame(columns=['股票代號', '股票名稱', '今日股數', '持股權重', 'ETF代號'])
-            
-            # 確保舊資料不會缺少欄位
-            for col in ['股票代號', '股票名稱', '今日股數', '持股權重', 'ETF代號']:
-                if col not in df_yesterday.columns:
-                    df_yesterday[col] = None
-
+            df_yesterday.columns = ['股票代號', '股票名稱', '今日股數', '持股權重', 'ETF代號']
             df_merge = pd.merge(df_today, df_yesterday, on='股票代號', how='left', suffixes=('_今', '_昨'))
+            
             df_merge['股數變動'] = df_merge['今日股數_今'].fillna(0) - df_merge['今日股數_昨'].fillna(0)
             df_merge['權重變動'] = df_merge['持股權重_今'].fillna(0) - df_merge['持股權重_昨'].fillna(0)
-            df_merge['新增偵測'] = df_merge.apply(lambda x: '★ 新進' if pd.isna(x['今日股數_昨']) and x['股票代號'] != '-' else '-', axis=1)
+            df_merge['新增偵測'] = df_merge.apply(lambda x: '★ 新進' if pd.isna(x['今日股數_昨']) else '-', axis=1)
             
             report = df_merge[['股票代號', '股票名稱_今', '今日股數_今', '股數變動', '持股權重_今', '權重變動', '新增偵測', 'ETF代號_今']].copy()
-            report.columns = ['股票代號', '股票名稱', '今日股數', '股數變動', '權重(%)', '權重變動', '新增偵測', 'ETF代號']
-            report['ETF名稱'] = fund_name
-        else:
-            report = df_today.copy()
-            report['股數變動'], report['權重變動'], report['新增偵測'] = 0, 0, '初始化'
-            report['ETF名稱'] = fund_name
-            report = report[['股票代號', '股票名稱', '今日股數', '股數變動', '持股權重', '權重變動', '新增偵測', 'ETF代號', 'ETF名稱']]
-            report.columns = ['股票代號', '股票名稱', '今日股數', '股數變動', '權重(%)', '權重變動', '新增偵測', 'ETF代號', 'ETF名稱']
-
-        all_reports.append(report)
-        
-        # 只有在「有真實資料」時才寫入存檔，不再儲存假資料
-        if not df_today['股票代號'].eq('-').all():
-            df_today.to_csv(save_path, index=False, encoding='utf-8-sig')
-
-    if all_reports:
-        final_df = pd.concat(all_reports, ignore_index=True)
-        final_df.to_csv('final_analysis.csv', index=False, encoding='utf-8-sig')
-        
-        # 買賣超排行榜只計算真實股票，排除「尚未串接」的提示行
-        real_data = final_df[(final_df['股票代號'] != '-') & (final_df['股數變動'] != 0)]
-        if not real_data.empty:
-            summary = real_data.groupby(['股票代號', '股票名稱']).agg({'股數變動': 'sum'}).reset_index()
-            summary.to_csv('market_ranking.csv', index=False, encoding='utf-8-sig')
-        else:
-            pd.DataFrame(columns=['股票代號', '股票名稱', '股數變動']).to_csv('market_ranking.csv', index=False)
-
-if __name__ == "__main__":
-    run_analysis()
+            report.columns = ['股票代號', '股票名稱', '今日股數', '股數變動', '權重(%)', '權重變動
