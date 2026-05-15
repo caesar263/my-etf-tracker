@@ -2,29 +2,26 @@ import streamlit as st
 import pandas as pd
 import os
 
-st.set_page_config(page_title="ETF 前十大變動監控", layout="wide")
-st.title("📊 主動式 ETF 持股每日變動分析")
+st.set_page_config(page_title="ETF 持股監控", layout="wide")
+st.title("📊 主動式 ETF 前十大持股每日變動")
 
-# 檢查分析結果檔案是否存在
 if os.path.exists('final_analysis.csv'):
     df = pd.read_csv('final_analysis.csv')
     
     st.subheader("📋 前十大持股變動清單")
     
-    # 修正：使用 map 取代已過時的 applymap
-    def highlight_new(val):
-        if val == '★ 新進榜':
-            return 'background-color: #fff9c4' # 亮黃色
-        return ''
+    # 使用通用的 style 函數，避免套件版本衝突
+    def color_new(val):
+        color = 'background-color: #fff9c4' if val == '★ 新進榜' else ''
+        return color
 
-    # 確保『新增偵測』欄位存在才進行標註
     if '新增偵測' in df.columns:
-        styled_df = df.style.map(highlight_new, subset=['新增偵測'])
-        st.dataframe(styled_df, use_container_width=True)
+        # 使用最新的建議語法
+        st.dataframe(df.style.applymap(color_new, subset=['新增偵測']), use_container_width=True)
     else:
         st.dataframe(df, use_container_width=True)
     
-    # 圖表呈現
+    # 變動圖表
     col1, col2 = st.columns(2)
     with col1:
         if '股數變動' in df.columns:
@@ -33,7 +30,7 @@ if os.path.exists('final_analysis.csv'):
             st.bar_chart(data=df, x='股票名稱', y='張數變動')
     with col2:
         if '權重變動' in df.columns:
-            st.subheader("⚖️ 權重位移 (%)")
+            st.subheader("⚖️ 權重變動 (%)")
             st.bar_chart(data=df, x='股票名稱', y='權重變動')
 else:
-    st.warning("🚀 數據正在初始化。請至 GitHub Actions 手動執行一次 Run workflow，明天即可看到變動對比。")
+    st.warning("🚀 數據正在路上！請至 GitHub Actions 點擊 Run workflow，完成後重新整理網頁即可。")
