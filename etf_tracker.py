@@ -4,28 +4,24 @@ import pandas as pd
 import requests
 import io
 
-# 🌟 根據 MoneyDJ 代號表建立的「台股精華對照字典」
-# 涵蓋半導體、電腦週邊、電子組件、金融及熱門權值股
+# 🌟 結合 MoneyDJ 官方代號表的完整字典
 NAME_TO_CODE = {
-    # --- 半導體與電子代工 ---
+    # 半導體與電子代工
     "台積電": "2330", "台灣積體電路": "2330", "鴻海": "2317", "聯發科": "2454", 
     "聯電": "2303", "日月光投控": "3711", "ASE": "3711", "瑞昱": "2379", 
     "聯詠": "3034", "智原": "3035", "南亞科": "2408", "力積電": "6770",
     "世界": "5347", "環球晶": "6488", "世芯-KY": "3661", "創意": "3443",
-    
-    # --- AI 伺服器與電腦週邊 ---
+    # AI 伺服器與電腦週邊
     "緯穎": "6669", "緯創": "3231", "廣達": "2382", "英業達": "2356", 
     "仁寶": "2324", "技嘉": "2376", "微星": "2377", "華碩": "2357", 
     "宏碁": "2353", "和碩": "4938", "研華": "2395", "神基": "3005",
-    
-    # --- 電子零組件與散熱 ---
+    # 電子零組件與散熱
     "台達電": "2308", "奇鋐": "3017", "雙鴻": "3324", "建準": "2421",
     "台光電": "2383", "台燿": "6274", "金像電": "2368", "欣興": "3037", 
     "南電": "8046", "景碩": "3189", "健策": "3653", "致茂": "2360",
     "川湖": "2059", "嘉澤": "3533", "萬潤": "6187", "旺矽": "6223",
     "富世達": "6805", "兆利": "3548", "光寶科": "2301",
-    
-    # --- 金融、電信與傳統權值 ---
+    # 金融、電信與傳統權值
     "富邦金": "2881", "國泰金": "2882", "中信金": "2891", "玉山金": "2884",
     "元大金": "2885", "兆豐金": "2886", "第一金": "2892", "合庫金": "5880",
     "永豐金": "2890", "台新金": "2887", "開發金": "2883", "華南金": "2880",
@@ -35,22 +31,6 @@ NAME_TO_CODE = {
     "大立光": "3008", "晶碩": "6491", "鈊象": "3293", "智邦": "2345"
 }
 CODE_TO_NAME = {v: k for k, v in NAME_TO_CODE.items()}
-
-def standardize_stock(row):
-    """強大反查引擎：確保每一支股票都有正確的 4 碼代號"""
-    code = str(row['股票代號']).strip()
-    name = str(row['股票名稱']).strip().upper()
-    
-    # 判斷代號是否為無效流水號 (如 1, 2, 3) 或長度錯誤
-    if len(code) < 3 or not code.isdigit():
-        for std_name, std_code in NAME_TO_CODE.items():
-            if std_name in name or name in std_name: 
-                code = std_code
-                break
-                
-    # 根據代號換上標準名稱
-    standard_name = CODE_TO_NAME.get(code, name)
-    return pd.Series([code, standard_name])
 
 def fetch_top10_data(fund_code):
     standard_columns = ['股票代號', '股票名稱', '今日股數', '持股權重', 'ETF代號']
@@ -77,13 +57,32 @@ def fetch_top10_data(fund_code):
                     final_df['今日股數'] = pd.to_numeric(df[col_weight].astype(str).str.replace('%', ''), errors='coerce') * 1000
                     final_df['持股權重'] = pd.to_numeric(df[col_weight].astype(str).str.replace('%', ''), errors='coerce').fillna(0)
                     final_df['ETF代號'] = fund_code
+                    
+                    # 🌟 裝甲級防呆寫法 (不會再被意外覆蓋)
+                    for i in final_df.index:
+                        code = str(final_df.at[i, '股票代號']).strip()
+                        name = str(final_df.at[i, '股票名稱']).strip().upper()
+                        
+                        # 判斷是否為無效流水號
+                        if len(code) < 3 or not code.isdigit():
+                            for std_name, std_code in NAME_TO_CODE.items():
+                                if std_name in name or name in std_name: 
+                                    code = std_code
+                                    break
+                                    
+                        standard_name = CODE_TO_NAME.get(code, name)
+                        
+                        # 強制寫入正確資料
+                        final_df.at[i, '股票代號'] = code
+                        final_df.at[i, '股票名稱'] = standard_name
+                        
                     return final_df.head(10)[standard_columns]
     except: pass
     return pd.DataFrame(columns=standard_columns)
 
 def run_analysis():
-    # 🌟 強制清理：刪除舊有錯亂代碼的緩存檔案
-    print("🧹 清理過時資料...")
+    # 🌟 強制洗檔：刪除含有 1, 2, 3 等錯誤代碼的舊檔案，避免污染比較邏輯
+    print("🧹 強制洗檔：清除舊有錯亂檔案...")
     for f in glob.glob("holdings_*.csv"):
         os.remove(f)
         
@@ -101,9 +100,6 @@ def run_analysis():
         df_today = fetch_top10_data(fund_code)
         if df_today.empty: continue
         
-        # 🌟 套用修正：將流水號強制轉換為 MoneyDJ 官方代號
-        df_today[['股票代號', '股票名稱']] = df_today.apply(standardize_stock, axis=1)
-        
         save_path = f'holdings_{fund_code}.csv'
         if os.path.exists(save_path):
             df_yesterday = pd.read_csv(save_path, dtype={'股票代號': str})
@@ -117,6 +113,7 @@ def run_analysis():
             report.columns = ['股票代號', '股票名稱', '今日股數', '股數變動', '權重(%)', '權重增加比例', '新增偵測', 'ETF代號']
         else:
             report = df_today.copy()
+            # 洗檔後的第一次執行，全部標示為初始化
             report['股數變動'], report['權重增加比例'], report['新增偵測'] = 0, 0, '初始化'
             report.columns = ['股票代號', '股票名稱', '今日股數', '權重(%)', 'ETF代號', '股數變動', '權重增加比例', '新增偵測']
             report = report[['股票代號', '股票名稱', '今日股數', '股數變動', '權重(%)', '權重增加比例', '新增偵測', 'ETF代號']]
