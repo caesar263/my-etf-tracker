@@ -4,33 +4,47 @@ import pandas as pd
 import requests
 import io
 
-# 🌟 第二層：標準名稱對照表
-STANDARD_NAMES = {
-    "2330": "台積電", "2317": "鴻海", "2454": "聯發科", "6669": "緯穎",
-    "3231": "緯創", "2382": "廣達", "2308": "台達電", "2881": "富邦金",
-    "2303": "聯電", "3711": "日月光投控", "2383": "台光電", "1477": "聚陽",
-    "2887": "台新金"
+# 🌟 全方位台股名稱與代號對照表 (可持續擴充)
+NAME_TO_CODE = {
+    "台積電": "2330", "鴻海": "2317", "聯發科": "2454", "緯穎": "6669",
+    "緯創": "3231", "廣達": "2382", "台達電": "2308", "富邦金": "2881",
+    "聯電": "2303", "日月光投控": "3711", "瑞昱": "2379", "聯詠": "3034",
+    "智原": "3035", "南亞科": "2408", "中華電": "2412", "國泰金": "2882",
+    "兆豐金": "2886", "中鋼": "2002", "台塑": "1301", "南亞": "1303",
+    "世芯-KY": "3661", "創意": "3443", "信驊": "5274", "矽力*-KY": "6415",
+    "中信金": "2891", "玉山金": "2884", "元大金": "2885", "第一金": "2892",
+    "中租-KY": "5871", "亞德客-KY": "1590", "研華": "2395", "大立光": "3008",
+    "英業達": "2356", "仁寶": "2324", "鈊象": "3293", "長榮": "2603",
+    "陽明": "2609", "萬海": "2615", "光寶科": "2301", "台光電": "2383",
+    "儒鴻": "1476", "聚陽": "1477", "台新金": "2887", "華南金": "2880",
+    "永豐金": "2890", "開發金": "2883", "奇鋐": "3017", "台燿": "6274",
+    "萬潤": "6187", "旺矽": "6223", "欣興": "3037", "致茂": "2360",
+    "富世達": "6805", "雙鴻": "3324", "川湖": "2059", "嘉澤": "3533",
+    "健策": "3653", "祥碩": "5269", "智邦": "2345", "微星": "2377",
+    "技嘉": "2376", "華碩": "2357", "宏碁": "2353", "和碩": "4938"
 }
+# 反轉字典，用於代號換名稱
+CODE_TO_NAME = {v: k for k, v in NAME_TO_CODE.items()}
 
 def standardize_stock(row):
-    """雙層過濾引擎：確保每一支股票都有正確的代號與統一的名稱"""
+    """超級雙層過濾引擎：確保每一支股票都有正確的代號與統一的名稱"""
     code = str(row['股票代號']).strip()
     name = str(row['股票名稱']).strip().upper()
     
-    # 🌟 第一層：如果第三方網站沒給代號 (導致代號是流水號)，用關鍵字暴力校正
+    # 🌟 第一層：如果代號無效 (例如抓到 index 的 0, 1, 2)，啟動名稱反查機制
     if len(code) < 3 or not code.isdigit():
-        if '積體電路' in name or '台灣積體' in name or '台積' in name: code = "2330"
-        elif '日月光' in name or 'ASE TECH' in name: code = "3711"
-        elif '台達電' in name: code = "2308"
-        elif '台光電' in name: code = "2383"
-        elif '台新' in name and '金' in name: code = "2887"
-        elif '聚陽' in name: code = "1477"
-        elif '鴻海' in name or 'HON HAI' in name: code = "2317"
-        elif '聯發科' in name: code = "2454"
-        # 這裡的邏輯可以根據實務遇到的各種怪異名稱持續擴充
+        # 從字典暴力反查
+        for std_name, std_code in NAME_TO_CODE.items():
+            if std_name in name or name in std_name:
+                code = std_code
+                break
+                
+        # 處理極端特例 (外資寫法或全名)
+        if '積體電路' in name or '台積' in name: code = "2330"
+        elif '日月光' in name or 'ASE' in name: code = "3711"
         
-    # 🌟 第二層：有了正確的代號後，統一名稱
-    standard_name = STANDARD_NAMES.get(code, name)
+    # 🌟 第二層：有了正確的 4 碼代號後，強制換上標準名稱
+    standard_name = CODE_TO_NAME.get(code, name)
     return pd.Series([code, standard_name])
 
 def fetch_top10_data(fund_code):
@@ -57,7 +71,7 @@ def fetch_top10_data(fund_code):
                     
                     if col_name and col_weight:
                         final_df = pd.DataFrame()
-                        # 若無代號，暫時塞入 index 避免當機 (後續會被雙層引擎修復)
+                        # 若無代號，暫時塞入 index (隨後會被 standardize_stock 修正)
                         final_df['股票代號'] = df[col_id].astype(str).str.replace('=', '').str.replace('"', '').str.strip() if col_id else df.index.astype(str)
                         final_df['股票名稱'] = df[col_name].astype(str)
                         
@@ -95,6 +109,9 @@ def run_analysis():
         print(f"📡 正在獲取 {fund_name} ({fund_code}) ...")
         df_today = fetch_top10_data(fund_code)
         
+        # 套用超級雙層過濾引擎
+        df_today[['股票代號', '股票名稱']] = df_today.apply(standardize_stock, axis=1)
+        
         df_yesterday = df_today.copy()
         if '阻擋' not in df_yesterday['股票名稱'].iloc[0]:
             df_yesterday['今日股數'] = df_yesterday['今日股數'] * 0.95 
@@ -113,15 +130,10 @@ def run_analysis():
 
     if all_reports:
         final_df = pd.concat(all_reports, ignore_index=True)
-        
-        # 🔥 啟動雙層洗清機制：確保統計前的資料 100% 乾淨對齊
-        final_df[['股票代號', '股票名稱']] = final_df.apply(standardize_stock, axis=1)
-        
         final_df.to_csv('final_analysis.csv', index=False, encoding='utf-8-sig')
         
         real_data = final_df[(final_df['股票代號'] != '-') & (final_df['股數變動'] != 0)]
         if not real_data.empty:
-            # 這次的 groupby 是基於絕對乾淨的名稱！
             summary = real_data.groupby(['股票代號', '股票名稱']).agg({'股數變動': 'sum'}).reset_index()
             summary.to_csv('market_ranking.csv', index=False, encoding='utf-8-sig')
 
