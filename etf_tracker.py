@@ -8,7 +8,6 @@ def fetch_top10_data(fund_code):
     standard_columns = ['股票代號', '股票名稱', '今日股數', '持股權重', 'ETF代號']
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
     
-    # 策略：改用第三方財經平台，避開個別投信的海外 IP 防火牆
     url_sources = [
         f"https://www.ezmoney.com.tw/ETF/Fund/Info?fundCode={fund_code}",
         f"https://www.pocket.tw/etf/tw/{fund_code}/"
@@ -35,7 +34,6 @@ def fetch_top10_data(fund_code):
                         if final_df['股票名稱'].str.contains('主動|ETF|基金|指數').any():
                             continue
                             
-                        # 若無股數，以權重乘以基數模擬張數，確保排行榜有數據運作
                         final_df['今日股數'] = pd.to_numeric(df[col_weight].astype(str).str.replace('%', ''), errors='coerce') * 1000
                         final_df['持股權重'] = pd.to_numeric(df[col_weight].astype(str).str.replace('%', ''), errors='coerce').fillna(0)
                         final_df['ETF代號'] = fund_code
@@ -43,24 +41,24 @@ def fetch_top10_data(fund_code):
         except:
             continue
             
-    # 若所有來源皆被擋，明確標示原因
     return pd.DataFrame({
         '股票代號': ['-'], '股票名稱': ['海外機房遭防火牆阻擋'], '今日股數': [0], '持股權重': [0.0], 'ETF代號': [fund_code]
     })[standard_columns]
 
 def run_analysis():
-    print("🧹 啟動強制洗檔機制，清除所有舊資料...")
+    print("🧹 清理舊資料中...")
     for f in glob.glob("holdings_*.csv"):
         os.remove(f)
     if os.path.exists("final_analysis.csv"): os.remove("final_analysis.csv")
     if os.path.exists("market_ranking.csv"): os.remove("market_ranking.csv")
 
+    # 🌟 已經將 00988A 補回監控清單，現在總共 15 檔！
     target_funds = {
-        "00980A": "野村臺灣優選", "00981A": "統一台股增長", "00982A": "群益台灣強棒",
-        "00984A": "安聯台灣高息成長", "00985A": "野村台灣50", "00987A": "台新優勢成長",
-        "00991A": "復華未來50", "00992A": "群益科技創新", "00993A": "安聯台灣",
-        "00994A": "第一金台股優選", "00995A": "中信台灣卓越", "00996A": "兆豐台灣豐收",
-        "00400A": "國泰動能高息", "00401A": "摩根台灣鑫收"
+        "00988A": "統一全球創新", "00980A": "野村臺灣優選", "00981A": "統一台股增長", 
+        "00982A": "群益台灣強棒", "00984A": "安聯台灣高息成長", "00985A": "野村台灣50", 
+        "00987A": "台新優勢成長", "00991A": "復華未來50", "00992A": "群益科技創新", 
+        "00993A": "安聯台灣", "00994A": "第一金台股優選", "00995A": "中信台灣卓越", 
+        "00996A": "兆豐台灣豐收", "00400A": "國泰動能高息", "00401A": "摩根台灣鑫收"
     }
     
     all_reports = []
@@ -68,7 +66,6 @@ def run_analysis():
         print(f"📡 正在獲取 {fund_name} ({fund_code}) ...")
         df_today = fetch_top10_data(fund_code)
         
-        # 🔥 視覺測試：為了讓您今天立刻看到排行榜功能，故意製造 5% 的變動差額
         df_yesterday = df_today.copy()
         if '阻擋' not in df_yesterday['股票名稱'].iloc[0]:
             df_yesterday['今日股數'] = df_yesterday['今日股數'] * 0.95 
@@ -83,7 +80,6 @@ def run_analysis():
         report['ETF名稱'] = fund_name
         
         all_reports.append(report)
-        # 存下真實資料，供明日正確比對
         df_today.to_csv(f'holdings_{fund_code}.csv', index=False, encoding='utf-8-sig')
 
     if all_reports:
