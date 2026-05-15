@@ -10,13 +10,13 @@ def fetch_top10_data(fund_code):
         'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7'
     }
     
-    # 🌟 投信網址路由表 (已裝填：統一、群益、兆豐)
+    # 🌟 投信網址路由表
     url_map = {
         "00981A": "https://www.ezmoney.com.tw/ETF/Fund/Info?fundCode=00981A",
         "00988A": "https://www.ezmoney.com.tw/ETF/Fund/Info?fundCode=00988A",
         "00403A": "https://www.ezmoney.com.tw/ETF/Fund/Info?fundCode=00403A",
-        "00992A": "https://www.capitalfund.com.tw/etf/product/detail/500/basic", # 群益科技創新
-        "00996A": "https://www.megafunds.com.tw/MEGA/etf/etf_product.aspx?id=23" # 兆豐台灣豐收
+        "00992A": "https://www.capitalfund.com.tw/etf/product/detail/500/basic",
+        "00996A": "https://www.megafunds.com.tw/MEGA/etf/etf_product.aspx?id=23"
     }
     
     target_url = url_map.get(fund_code)
@@ -25,23 +25,19 @@ def fetch_top10_data(fund_code):
         try:
             print(f"正在嘗試連線並抓取: {fund_code} ...")
             response = requests.get(target_url, headers=headers, timeout=15)
-            response.encoding = 'utf-8' # 確保中文不亂碼
+            response.encoding = 'utf-8'
             tables = pd.read_html(io.StringIO(response.text))
             
-            # 🌟 智慧表格辨識引擎
             for df in tables:
                 cols_str = str(df.columns)
                 first_row_str = str(df.iloc[0].values) if not df.empty else ""
                 
-                # 判斷是否為持股表格 (包含權重或比例)
                 if ('權重' in cols_str or '比例' in cols_str) or ('權重' in first_row_str or '比例' in first_row_str):
                     
-                    # 有些網站的表頭寫在第一行資料裡，將它推上去當表頭
                     if '權重' in first_row_str or '比例' in first_row_str:
                         df.columns = df.iloc[0]
                         df = df[1:]
                         
-                    # 智慧尋找對應的欄位 (不管網站取什麼名字)
                     col_id = next((c for c in df.columns if '代' in str(c) or '碼' in str(c)), None)
                     col_name = next((c for c in df.columns if '名' in str(c)), None)
                     col_vol = next((c for c in df.columns if '股數' in str(c) or '張' in str(c)), None)
@@ -49,19 +45,15 @@ def fetch_top10_data(fund_code):
                     
                     if col_id and col_name and col_weight:
                         final_df = pd.DataFrame()
-                        # 清洗代號 (去除網站可能帶有的 = 或 " 符號)
                         final_df['股票代號'] = df[col_id].astype(str).str.replace('=', '').str.replace('"', '').str.strip()
                         final_df['股票名稱'] = df[col_name].astype(str).str.strip()
                         
-                        # 剔除空資料
                         final_df = final_df[~final_df['股票代號'].isin(['nan', 'None', '-'])]
                         if final_df.empty: continue
                         
-                        # 避開抓到「相關基金」的錯誤表格
                         if final_df['股票名稱'].str.contains('主動|ETF|基金|指數|現金').any():
                             continue
                             
-                        # 若官網沒有提供股數，則填入 0
                         if col_vol:
                             final_df['今日股數'] = pd.to_numeric(df[col_vol].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
                         else:
@@ -106,4 +98,27 @@ def run_analysis():
             df_merge['新增偵測'] = df_merge.apply(lambda x: '★ 新進' if pd.isna(x['今日股數_昨']) else '-', axis=1)
             
             report = df_merge[['股票代號', '股票名稱_今', '今日股數_今', '股數變動', '持股權重_今', '權重變動', '新增偵測', 'ETF代號_今']].copy()
-            report.columns = ['股票代號', '股票名稱', '今日股數', '股數變動', '權重(%)', '權重變動
+            # 確保這裡的引號和括號完整無缺
+            report.columns = ['股票代號', '股票名稱', '今日股數', '股數變動', '權重(%)', '權重變動', '新增偵測', 'ETF代號']
+            report['ETF名稱'] = fund_name
+        else:
+            report = df_today.copy()
+            report['股數變動'], report['權重變動'], report['新增偵測'] = 0, 0, '初始化'
+            report['ETF名稱'] = fund_name
+            report = report[['股票代號', '股票名稱', '今日股數', '股數變動', '持股權重', '權重變動', '新增偵測', 'ETF代號', 'ETF名稱']]
+            report.columns = ['股票代號', '股票名稱', '今日股數', '股數變動', '權重(%)', '權重變動', '新增偵測', 'ETF代號', 'ETF名稱']
+
+        all_reports.append(report)
+        df_today.to_csv(save_path, index=False, encoding='utf-8-sig')
+
+    if all_reports:
+        final_df = pd.concat(all_reports, ignore_index=True)
+        final_df.to_csv('final_analysis.csv', index=False, encoding='utf-8-sig')
+        
+        real_data = final_df[(final_df['股票代號'] != '-') & (final_df['股數變動'] != 0)]
+        if not real_data.empty:
+            summary = real_data.groupby(['股票代號', '股票名稱']).agg({'股數變動': 'sum'}).reset_index()
+            summary.to_csv('market_ranking.csv', index=False, encoding='utf-8-sig')
+
+if __name__ == "__main__":
+    run_analysis()
