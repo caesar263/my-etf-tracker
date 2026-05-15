@@ -4,6 +4,23 @@ import pandas as pd
 import requests
 import io
 
+# 🌟 建立全市場統一的「標準名稱字典」
+# 只要代號符合，系統會強制將名稱統一，徹底解決重複計算與「成分股_xxxx」的問題
+STANDARD_NAMES = {
+    "2330": "台積電", "2317": "鴻海", "2454": "聯發科", "6669": "緯穎",
+    "3231": "緯創", "2382": "廣達", "2308": "台達電", "2881": "富邦金",
+    "2303": "聯電", "3711": "日月光投控", "2379": "瑞昱", "3034": "聯詠",
+    "3035": "智原", "2408": "南亞科", "2412": "中華電", "2882": "國泰金",
+    "2886": "兆豐金", "2002": "中鋼", "1301": "台塑", "1303": "南亞",
+    "3661": "世芯-KY", "3443": "創意", "5274": "信驊", "6415": "矽力*-KY",
+    "2891": "中信金", "2884": "玉山金", "2885": "元大金", "2892": "第一金",
+    "5871": "中租-KY", "1590": "亞德客-KY", "2395": "研華", "3008": "大立光",
+    "2356": "英業達", "2324": "仁寶", "3293": "鈊象", "2603": "長榮",
+    "2609": "陽明", "2615": "萬海", "2301": "光寶科", "2383": "台光電",
+    "1476": "儒鴻", "1477": "聚陽", "2887": "台新金", "2880": "華南金",
+    "2890": "永豐金", "2883": "開發金", "1476": "儒鴻"
+}
+
 def fetch_top10_data(fund_code):
     standard_columns = ['股票代號', '股票名稱', '今日股數', '持股權重', 'ETF代號']
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
@@ -28,7 +45,7 @@ def fetch_top10_data(fund_code):
                     
                     if col_name and col_weight:
                         final_df = pd.DataFrame()
-                        final_df['股票代號'] = df[col_id].astype(str) if col_id else df.index.astype(str)
+                        final_df['股票代號'] = df[col_id].astype(str).str.replace('=', '').str.replace('"', '').str.strip() if col_id else df.index.astype(str)
                         final_df['股票名稱'] = df[col_name].astype(str)
                         
                         if final_df['股票名稱'].str.contains('主動|ETF|基金|指數').any():
@@ -37,6 +54,10 @@ def fetch_top10_data(fund_code):
                         final_df['今日股數'] = pd.to_numeric(df[col_weight].astype(str).str.replace('%', ''), errors='coerce') * 1000
                         final_df['持股權重'] = pd.to_numeric(df[col_weight].astype(str).str.replace('%', ''), errors='coerce').fillna(0)
                         final_df['ETF代號'] = fund_code
+                        
+                        # 🌟 過濾第一層：抓取時立刻套用標準名稱字典
+                        final_df['股票名稱'] = final_df.apply(lambda x: STANDARD_NAMES.get(str(x['股票代號']).strip(), x['股票名稱']), axis=1)
+                        
                         return final_df.head(10)[standard_columns]
         except:
             continue
@@ -52,7 +73,6 @@ def run_analysis():
     if os.path.exists("final_analysis.csv"): os.remove("final_analysis.csv")
     if os.path.exists("market_ranking.csv"): os.remove("market_ranking.csv")
 
-    # 🌟 已經將 00988A 補回監控清單，現在總共 15 檔！
     target_funds = {
         "00988A": "統一全球創新", "00980A": "野村臺灣優選", "00981A": "統一台股增長", 
         "00982A": "群益台灣強棒", "00984A": "安聯台灣高息成長", "00985A": "野村台灣50", 
@@ -84,10 +104,14 @@ def run_analysis():
 
     if all_reports:
         final_df = pd.concat(all_reports, ignore_index=True)
+        
+        # 🌟 過濾第二層：合併後再次確保名稱完全對齊，徹底消滅重複項目
+        final_df['股票名稱'] = final_df.apply(lambda x: STANDARD_NAMES.get(str(x['股票代號']).strip(), x['股票名稱']), axis=1)
         final_df.to_csv('final_analysis.csv', index=False, encoding='utf-8-sig')
         
         real_data = final_df[(final_df['股票代號'] != '-') & (final_df['股數變動'] != 0)]
         if not real_data.empty:
+            # 由於名稱已經全部被統一，這裡的 groupby 就能完美將同代號的股票合併計算
             summary = real_data.groupby(['股票代號', '股票名稱']).agg({'股數變動': 'sum'}).reset_index()
             summary.to_csv('market_ranking.csv', index=False, encoding='utf-8-sig')
 
