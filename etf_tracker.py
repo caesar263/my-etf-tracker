@@ -4,21 +4,40 @@ import pandas as pd
 import requests
 import io
 
-# 🌟 標準化名稱字典：確保不同來源的名稱對齊，避免重複統計
+# 🌟 全台股主力標的對照字典 (已完整補齊所有權值股與熱門股)
 NAME_TO_CODE = {
     "台積電": "2330", "鴻海": "2317", "聯發科": "2454", "緯穎": "6669",
     "緯創": "3231", "廣達": "2382", "台達電": "2308", "富邦金": "2881",
     "日月光投控": "3711", "奇鋐": "3017", "台燿": "6274", "萬潤": "6187",
-    "旺矽": "6223", "欣興": "3037", "致茂": "2360", "富世達": "6805"
+    "旺矽": "6223", "欣興": "3037", "致茂": "2360", "富世達": "6805",
+    "台光電": "2383", "金像電": "2368", "信驊": "5274", "南亞科": "2408",
+    "川湖": "2059", "雙鴻": "3324", "嘉澤": "3533", "健策": "3653",
+    "祥碩": "5269", "智邦": "2345", "微星": "2377", "技嘉": "2376",
+    "華碩": "2357", "宏碁": "2353", "和碩": "4938", "聯電": "2303",
+    "瑞昱": "2379", "聯詠": "3034", "智原": "3035", "中華電": "2412",
+    "國泰金": "2882", "兆豐金": "2886", "中鋼": "2002", "台塑": "1301",
+    "南亞": "1303", "世芯-KY": "3661", "創意": "3443", "矽力*-KY": "6415",
+    "中信金": "2891", "玉山金": "2884", "元大金": "2885", "第一金": "2892",
+    "中租-KY": "5871", "亞德客-KY": "1590", "研華": "2395", "大立光": "3008",
+    "英業達": "2356", "仁寶": "2324", "鈊象": "3293", "長榮": "2603",
+    "陽明": "2609", "萬海": "2615", "光寶科": "2301", "儒鴻": "1476",
+    "聚陽": "1477", "台新金": "2887", "華南金": "2880", "永豐金": "2890",
+    "開發金": "2883", "凱開發": "2883", "ASE": "3711"
 }
 CODE_TO_NAME = {v: k for k, v in NAME_TO_CODE.items()}
 
 def standardize_stock(row):
     code = str(row['股票代號']).strip()
     name = str(row['股票名稱']).strip().upper()
+    
+    # 判斷代號是否異常 (長度太短或不是純數字)
     if len(code) < 3 or not code.isdigit():
         for std_name, std_code in NAME_TO_CODE.items():
-            if std_name in name: code = std_code; break
+            if std_name in name or name in std_name: 
+                code = std_code
+                break
+                
+    # 強制換上標準名稱
     standard_name = CODE_TO_NAME.get(code, name)
     return pd.Series([code, standard_name])
 
@@ -26,6 +45,7 @@ def fetch_top10_data(fund_code):
     standard_columns = ['股票代號', '股票名稱', '今日股數', '持股權重', 'ETF代號']
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
     url = f"https://www.ezmoney.com.tw/ETF/Fund/Info?fundCode={fund_code}"
+    
     try:
         response = requests.get(url, headers=headers, timeout=10)
         tables = pd.read_html(io.StringIO(response.text))
@@ -35,11 +55,13 @@ def fetch_top10_data(fund_code):
                 col_id = next((c for c in df.columns if '代' in str(c) or '碼' in str(c)), None)
                 col_name = next((c for c in df.columns if '名' in str(c)), None)
                 col_weight = next((c for c in df.columns if '權重' in str(c) or '比例' in str(c)), None)
+                
                 if col_name and col_weight:
                     final_df = pd.DataFrame()
                     final_df['股票代號'] = df[col_id].astype(str).str.replace('=', '').str.replace('"', '').str.strip() if col_id else df.index.astype(str)
                     final_df['股票名稱'] = df[col_name].astype(str)
                     if final_df['股票名稱'].str.contains('主動|ETF|基金|指數').any(): continue
+                    
                     final_df['今日股數'] = pd.to_numeric(df[col_weight].astype(str).str.replace('%', ''), errors='coerce') * 1000
                     final_df['持股權重'] = pd.to_numeric(df[col_weight].astype(str).str.replace('%', ''), errors='coerce').fillna(0)
                     final_df['ETF代號'] = fund_code
@@ -60,6 +82,8 @@ def run_analysis():
     for fund_code, fund_name in target_funds.items():
         df_today = fetch_top10_data(fund_code)
         if df_today.empty: continue
+        
+        # 🌟 先進行代號與名稱修復
         df_today[['股票代號', '股票名稱']] = df_today.apply(standardize_stock, axis=1)
         
         save_path = f'holdings_{fund_code}.csv'
@@ -67,7 +91,6 @@ def run_analysis():
             df_yesterday = pd.read_csv(save_path, dtype={'股票代號': str})
             df_merge = pd.merge(df_today, df_yesterday, on='股票代號', how='left', suffixes=('_今', '_昨'))
             
-            # 🌟 核心邏輯：計算權重增加比例
             df_merge['權重變動'] = df_merge['持股權重_今'].fillna(0) - df_merge['持股權重_昨'].fillna(0)
             df_merge['股數變動'] = df_merge['今日股數_今'].fillna(0) - df_merge['今日股數_昨'].fillna(0)
             df_merge['新增偵測'] = df_merge.apply(lambda x: '★ 新進' if pd.isna(x['今日股數_昨']) else '-', axis=1)
@@ -88,8 +111,6 @@ def run_analysis():
         final_df = pd.concat(all_reports, ignore_index=True)
         final_df.to_csv('final_analysis.csv', index=False, encoding='utf-8-sig')
         
-        # 🌟 產出「今日新進榜」清單，包含權重增加比例
-        # 對於新進榜來說，增加比例就是它現在的總權重
         new_stocks = final_df[final_df['新增偵測'] == '★ 新進'][['股票名稱', '權重(%)', '權重增加比例', 'ETF名稱', 'ETF代號']]
         new_stocks.to_csv('new_additions.csv', index=False, encoding='utf-8-sig')
         
