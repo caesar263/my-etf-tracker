@@ -2,26 +2,26 @@ name: Daily Active ETF Tracker
 
 on:
   schedule:
-    - cron: '30 9 * * *' # 台北時間 17:30
+    - cron: '30 9 * * *'
   workflow_dispatch:
 
 permissions:
-  contents: write # 必須確保有寫入權限
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.9'
       - run: pip install pandas
       - run: python etf_tracker.py
-      - name: Commit changes
+      - name: Commit and Push
         run: |
           git config --global user.name "GitHub Action"
           git config --global user.email "action@github.com"
-          git add last_data.csv analysis_result.csv top_ranking.csv
-          git commit -m "Update ETF report" || exit 0
+          git add *.csv
+          git commit -m "Update ETF Top 10 Data" || exit 0
           git push
