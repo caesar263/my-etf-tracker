@@ -4,35 +4,38 @@ import pandas as pd
 import requests
 import io
 
-# 🌟 全台股主力標的對照字典 (已補齊您截圖中的所有飆股)
 NAME_TO_CODE = {
-    "台積電": "2330", "鴻海": "2317", "聯發科": "2454", "緯穎": "6669",
-    "緯創": "3231", "廣達": "2382", "台達電": "2308", "富邦金": "2881",
-    "日月光投控": "3711", "奇鋐": "3017", "台燿": "6274", "萬潤": "6187",
-    "旺矽": "6223", "欣興": "3037", "致茂": "2360", "富世達": "6805",
-    "台光電": "2383", "金像電": "2368", "信驊": "5274", "南亞科": "2408",
-    "川湖": "2059", "雙鴻": "3324", "嘉澤": "3533", "健策": "3653",
-    "祥碩": "5269", "智邦": "2345", "微星": "2377", "技嘉": "2376",
-    "華碩": "2357", "宏碁": "2353", "和碩": "4938", "聯電": "2303",
-    "瑞昱": "2379", "聯詠": "3034", "智原": "3035", "中華電": "2412",
-    "國泰金": "2882", "兆豐金": "2886", "中鋼": "2002", "台塑": "1301",
-    "南亞": "1303", "世芯-KY": "3661", "創意": "3443", "矽力*-KY": "6415",
-    "中信金": "2891", "玉山金": "2884", "元大金": "2885", "第一金": "2892",
-    "中租-KY": "5871", "亞德客-KY": "1590", "研華": "2395", "大立光": "3008",
-    "英業達": "2356", "仁寶": "2324", "鈊象": "3293", "長榮": "2603",
-    "陽明": "2609", "萬海": "2615", "光寶科": "2301", "儒鴻": "1476",
-    "聚陽": "1477", "台新金": "2887", "華南金": "2880", "永豐金": "2890",
-    "開發金": "2883", "ASE": "3711", "南電": "8046", "貿聯-KY": "3665"
+    "台積電": "2330", "台灣積體電路": "2330", "鴻海": "2317", "聯發科": "2454", 
+    "聯電": "2303", "日月光投控": "3711", "ASE": "3711", "瑞昱": "2379", 
+    "聯詠": "3034", "智原": "3035", "南亞科": "2408", "力積電": "6770",
+    "世界": "5347", "環球晶": "6488", "世芯-KY": "3661", "創意": "3443",
+    "緯穎": "6669", "緯創": "3231", "廣達": "2382", "英業達": "2356", 
+    "仁寶": "2324", "技嘉": "2376", "微星": "2377", "華碩": "2357", 
+    "宏碁": "2353", "和碩": "4938", "研華": "2395", "神基": "3005",
+    "台達電": "2308", "奇鋐": "3017", "雙鴻": "3324", "建準": "2421",
+    "台光電": "2383", "台燿": "6274", "金像電": "2368", "欣興": "3037", 
+    "南電": "8046", "景碩": "3189", "健策": "3653", "致茂": "2360",
+    "川湖": "2059", "嘉澤": "3533", "萬潤": "6187", "旺矽": "6223",
+    "富世達": "6805", "兆利": "3548", "光寶科": "2301",
+    "富邦金": "2881", "國泰金": "2882", "中信金": "2891", "玉山金": "2884",
+    "元大金": "2885", "兆豐金": "2886", "第一金": "2892", "合庫金": "5880",
+    "永豐金": "2890", "台新金": "2887", "開發金": "2883", "華南金": "2880",
+    "中租-KY": "5871", "中華電": "2412", "台灣大": "3045", "遠傳": "4904",
+    "長榮": "2603", "陽明": "2609", "萬海": "2615", "中鋼": "2002",
+    "台塑": "1301", "南亞": "1303", "台化": "1326", "台塑化": "6505",
+    "大立光": "3008", "晶碩": "6491", "鈊象": "3293", "智邦": "2345",
+    "貿聯-KY": "3665", "貿聯": "3665"
 }
 CODE_TO_NAME = {v: k for k, v in NAME_TO_CODE.items()}
 
-# 獨立出修復模組，確保百分之百執行
 def fix_stock_data(df):
-    for i in df.index:
-        code = str(df.at[i, '股票代號']).strip()
-        name = str(df.at[i, '股票名稱']).strip().upper()
+    new_codes = []
+    new_names = []
+    # 徹底放棄 dataframe 內部修改，直接抽出乾淨的陣列再塞回去，保證不出錯！
+    for idx, row in df.iterrows():
+        code = str(row.get('股票代號', '')).strip()
+        name = str(row.get('股票名稱', '')).strip().upper()
         
-        # 只要代碼是 1, 2, 3 這種流水號，就強制重新配對
         if len(code) < 3 or not code.isdigit():
             for std_name, std_code in NAME_TO_CODE.items():
                 if std_name in name or name in std_name:
@@ -40,8 +43,11 @@ def fix_stock_data(df):
                     break
         
         standard_name = CODE_TO_NAME.get(code, name)
-        df.at[i, '股票代號'] = code
-        df.at[i, '股票名稱'] = standard_name
+        new_codes.append(code)
+        new_names.append(standard_name)
+        
+    df['股票代號'] = new_codes
+    df['股票名稱'] = new_names
     return df
 
 def fetch_top10_data(fund_code):
@@ -50,7 +56,7 @@ def fetch_top10_data(fund_code):
     url = f"https://www.ezmoney.com.tw/ETF/Fund/Info?fundCode={fund_code}"
     
     try:
-        response = requests.get(url, headers=headers, timeout=10)
+        response = requests.get(url, headers=headers, timeout=15)
         tables = pd.read_html(io.StringIO(response.text))
         for df in tables:
             cols_str = str(df.columns)
@@ -69,14 +75,15 @@ def fetch_top10_data(fund_code):
                     final_df['持股權重'] = pd.to_numeric(df[col_weight].astype(str).str.replace('%', ''), errors='coerce').fillna(0)
                     final_df['ETF代號'] = fund_code
                     
-                    # 🌟 呼叫強力修復模組
+                    # 🌟 呼叫絕對防呆修復模組
                     final_df = fix_stock_data(final_df)
                     return final_df.head(10)[standard_columns]
-    except: pass
+    except Exception as e: 
+        print(f"Error fetching {fund_code}: {e}")
+        pass
     return pd.DataFrame(columns=standard_columns)
 
 def run_analysis():
-    # 🌟 絕對洗檔：在所有動作開始前，把所有舊資料粉碎
     print("🧹 絕對洗檔：清除舊有錯亂檔案...")
     for f in glob.glob("holdings_*.csv"): os.remove(f)
     for f in ["final_analysis.csv", "new_additions.csv", "market_ranking.csv"]:
@@ -98,7 +105,7 @@ def run_analysis():
         
         save_path = f'holdings_{fund_code}.csv'
         
-        # 由於一開始就刪除檔案了，這裡只會走「初始化」路線，絕不可能出現「★ 新進」
+        # 強制洗牌：第一次重新執行，全部變成初始化
         report = df_today.copy()
         report['股數變動'], report['權重增加比例'], report['新增偵測'] = 0, 0, '初始化'
         report.columns = ['股票代號', '股票名稱', '今日股數', '權重(%)', 'ETF代號', '股數變動', '權重增加比例', '新增偵測']
